@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Onitama Puzzles</title>
+<style>
+  :root {
+    --bg: #1e2228;
+    --panel: #2a2f37;
+    --line: #4a4f58;
+    --blue: #3b82e0;
+    --hi: #f5d76e;
+    --text: #e8e6e1;
+    --muted: #9aa0a8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 20px;
+    background: var(--bg); color: var(--text);
+    font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center; gap: 20px;
+  }
+  h1 { margin: 0; font-size: 26px; letter-spacing: 6px; font-weight: 600; }
+  h1 small { letter-spacing: 1px; font-size: 12px; color: var(--muted); display: block; text-align: center; }
+
+  #status {
+    min-height: 24px; font-size: 16px; color: var(--hi); text-align: center;
+  }
+
+  #controls {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center;
+  }
+  select, button {
+    background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 12px; font-size: 14px; cursor: pointer;
+  }
+  button:hover { border-color: var(--hi); }
+
+  #hashbox {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center;
+    max-width: 600px;
+  }
+  #puzzlehash {
+    background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px 12px; font-size: 14px; font-family: monospace;
+    min-width: 250px; flex: 1;
+  }
+  #note {
+    font-size: 12px; color: var(--muted); max-width: 540px; text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<h1>ONITAMA<small>Puzzles</small></h1>
+
+<div id="controls">
+  <label>Win in N moves
+    <select id="depth">
+      <option value="1">1</option>
+      <option value="2" selected>2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+    </select>
+  </label>
+  <label>Max pawns per side
+    <select id="maxpawns">
+      <option value="2">2</option>
+      <option value="3" selected>3</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+    </select>
+  </label>
+  <button id="genpuzzle">Generate Puzzle</button>
+</div>
+
+<div id="status">Loading engine…</div>
+
+<div id="hashbox">
+  <input type="text" id="puzzlehash" readonly>
+  <button id="copystate">Copy State</button>
+</div>
+
+<div id="note">
+  How it works: Select the number of moves (win-in-N) and max pawns per side, then generate a random puzzle.
+  Blue always moves first. Copy the state hash to share puzzles or analyze them with the <a href="index.html" style="color: var(--hi); text-decoration: none;">engine</a>.
+</div>
+
+<script>
+"use strict";
+
+let api = null;
+
+const $ = id => document.getElementById(id);
+
+async function generatePuzzle() {
+  const depth = parseInt($("depth").value, 10);
+  const maxPawns = parseInt($("maxpawns").value, 10);
+  const seed = Math.floor(Math.random() * 0x7fffffff);
+
+  $("status").textContent = "Generating puzzle…";
+  $("puzzlehash").value = "";
+
+  const result = await api.findPuzzle(depth, maxPawns, seed);
+
+  if (result.error) {
+    $("status").textContent = "Error: " + result.error;
+    console.error("Puzzle error:", result.error);
+    return;
+  }
+
+  if (!result.found) {
+    $("status").textContent = "Failed to generate puzzle. Try different settings.";
+    return;
+  }
+
+  console.log("Generated puzzle with hash length:", result.hash ? result.hash.length : 0);
+  if (result.debug) {
+    console.log("Debug:", result.debug);
+    const verified = result.debug.verified_mate_plies;
+    const target = result.debug.target_mate_plies;
+    if (verified !== target) {
+      console.warn("WARNING: Puzzle mate depth mismatch! Target:", target, "plies, Verified:", verified, "plies");
+    }
+  }
+  $("puzzlehash").value = result.hash || "";
+  $("status").textContent = "Puzzle generated (win in " + depth + " move" + (depth === 1 ? "" : "s") + ")";
+}
+
+$("genpuzzle").onclick = generatePuzzle;
+
+$("copystate").onclick = () => {
+  try {
+    $("puzzlehash").select();
+    document.execCommand("copy");
+    $("copystate").textContent = "Copied!";
+    setTimeout(() => { $("copystate").textContent = "Copy State"; }, 2000);
+  } catch (e) {
+    console.error("Copy failed:", e);
+    alert("Error copying state");
+  }
+};
+
+// Setup puzzle worker
+function setupWorker(scriptName) {
+  const script = new URL(scriptName, location.href).href;
+  console.log("[puzzle] Creating worker from:", script);
+  console.log("[puzzle] Current location:", location.href);
+  const worker = new Worker(script);
+  let nextId = 1;
+  const pending = new Map();
+  let markReady;
+  const ready = new Promise(res => { markReady = res; });
+
+  worker.onerror = (event) => {
+    // Worker error event has filename, lineno, colno, and message properties
+    const errorMsg = event && event.message
+      ? event.message
+      : (event && event.filename
+        ? event.filename + " (line " + event.lineno + ", col " + event.colno + ")"
+        : (event ? event.toString() : "Unknown error"));
+    const fullMsg = "Worker error loading " + scriptName + ": " + errorMsg;
+    console.error(fullMsg, event);
+    if (event && event.filename) {
+      console.error("  File:", event.filename);
+      console.error("  Line:", event.lineno);
+      console.error("  Column:", event.colno);
+    }
+    $("status").textContent = fullMsg;
+    // Return true to prevent the error from propagating
+    return true;
+  };
+
+  worker.onmessage = (e) => {
+    const msg = e.data;
+    if (msg.type === "ready") {
+      console.log("[puzzle-worker] Worker ready");
+      markReady();
+      return;
+    }
+    if (msg.type === "error") {
+      console.error("Worker error:", msg.message);
+      if (msg.details) {
+        console.error("Error details:", msg.details);
+      }
+      $("status").textContent = "Error: " + msg.message;
+      return;
+    }
+    const resolve = pending.get(msg.id);
+    if (resolve) {
+      pending.delete(msg.id);
+      if (msg.error) {
+        console.error("RPC error:", msg.error);
+        resolve({ error: msg.error });
+      } else {
+        try {
+          const parsed = typeof msg.result === "string" ? JSON.parse(msg.result) : msg.result;
+          console.log("RPC parsed result:", parsed);
+          console.log("Hash value:", parsed.hash, "Hash length:", parsed.hash ? parsed.hash.length : "N/A");
+          resolve(parsed);
+        } catch (e) {
+          console.error("Failed to parse RPC result:", msg.result, e);
+          resolve({ error: "Failed to parse result: " + e.message });
+        }
+      }
+    }
+  };
+
+  function call(method, args) {
+    return ready.then(() => new Promise(resolve => {
+      const id = nextId++;
+      pending.set(id, resolve);
+      worker.postMessage({ id, method, args });
+    }));
+  }
+
+  return { ready, call };
+}
+
+const puzzleWorker = setupWorker("puzzle-worker.js");
+
+api = {
+  findPuzzle: (depth, maxPawns, seed) => puzzleWorker.call("find", [depth, maxPawns, seed]),
+};
+
+// Ready when puzzle worker is initialized
+puzzleWorker.ready.then(() => {
+  $("status").textContent = "Ready — click Generate Puzzle";
+});
+</script>
+</body>
+</html>

@@ -3,47 +3,33 @@
 //
 
 #include "Cards.h"
+#include "Piece.h"
+#include <iostream>
 
-bool Cards::addCard(Animal aType) {
-    int n = mCards.size();
-    if(n < 5) {
-        mCards.insert({n, std::make_shared<Animal>(aType) });
-        return true;
-    }
-    else {
-        return false;
-    }
+Cards::Cards() {
+    mCards.fill(static_cast<CurrentCard::CardType>(0));  // First card in the deck
 }
 
-bool Cards::play(int aCard) {
-
-    swap(aCard, 99);
-    swap(CardExchange, aCard);
-    swap(99, CardExchange);
-
-    return true;
+void Cards::deal(std::mt19937& rng) {
+    auto hand = CurrentCard::getInitialHand(rng);
+    for (int i = 0; i < 5; i++)
+        mCards.at(i) = hand.at(i);
 }
 
-void Cards::show() {
-
-    for(int i=0; i<5; i++)
-    {
-        auto it = mCards.find(i);
-        std::cout << it->first << ": " << it->second->mType << std::endl;
-    }
+int Cards::firstSlot(int color) {
+    return color == Piece::Red ? CardA1 : CardB1;
 }
 
-void Cards::swap(int oldKey, int newKey) {
-    auto it = mCards.find(oldKey);
-    if (it != mCards.end()) {
-        std::swap(mCards[newKey], it->second);
-        mCards.erase(it);
-    }
-    else
-        throw std::logic_error("Key not found");
+void Cards::play(int slot) {
+    if (slot < CardA1 || slot > CardB2)
+        throw std::logic_error("Cannot play that card slot");
+    std::swap(mCards.at(slot), mCards.at(CardExchange));
 }
 
-Move Cards::getMove(Cards::CardType aType, int aMove) {
-    return mCards.at(aType)->getMove(aMove);
+void Cards::show() const {
+    std::cout << "Red:  " << CurrentCard::name(mCards.at(CardA1))
+              << ", " << CurrentCard::name(mCards.at(CardA2)) << std::endl;
+    std::cout << "Blue: " << CurrentCard::name(mCards.at(CardB1))
+              << ", " << CurrentCard::name(mCards.at(CardB2)) << std::endl;
+    std::cout << "Side card:  " << CurrentCard::name(mCards.at(CardExchange)) << std::endl;
 }
-

@@ -7,19 +7,30 @@
 
 struct Position
 {
-    Position() {};
+    Position() : mX(0), mY(0) {};
     Position(int aX, int aY) : mX(aX), mY(aY) {};
 
     int mX;
     int mY;
-    bool mIsValid;
+
+    bool isOnBoard() const
+    {
+        return mX >= 0 && mX < 5 && mY >= 0 && mY < 5;
+    }
 
     friend Position operator+(const Position& a, const Position& b)
     {
-         Position r;
-         /*r.m_x = a.m_x + b.m_x;
-         r.m_y = a.m_y + b.m_y;*/
-         return r;
+        return Position(a.mX + b.mX, a.mY + b.mY);
+    }
+
+    friend bool operator==(const Position& a, const Position& b)
+    {
+        return a.mX == b.mX && a.mY == b.mY;
+    }
+
+    friend bool operator!=(const Position& a, const Position& b)
+    {
+        return !(a == b);
     }
 };
 

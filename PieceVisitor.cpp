@@ -15,11 +15,7 @@ Move::Move(int aShiftX, int aShiftY)
 
 void Move::visit(Piece &p)
 {
-    int x = p.mPosition.mX + mShiftX;
-    int y = p.mPosition.mY + mShiftY;
-
-    if( x < 5 && x >= 0 && y < 5 && y >= 0 )
-        p.mPosition = Position(x, y);
-    else
-        std::cout << "Invalid move: " << x << ", " << y << std::endl;
+    // Validity (board bounds, collisions) is checked by Node::legalMoves();
+    // by the time a Move is applied it is known to be legal.
+    p.mPosition = p.mPosition + Position(mShiftX, mShiftY);
 }

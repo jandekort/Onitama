@@ -14,6 +14,7 @@ class PieceVisitor // Base class of operations on Piece
 {
 public:
     virtual void visit(Piece& p) = 0;
+    virtual ~PieceVisitor() {};
 };
 
 class Move : public PieceVisitor
