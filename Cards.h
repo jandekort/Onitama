@@ -5,26 +5,33 @@
 #ifndef ONITAMA_CARDS_H
 #define ONITAMA_CARDS_H
 
-#include <map>
-#include "PieceVisitor.h"
-#include "Animal.h"
+#include "DeckConfig.h"
+#include <array>
+#include <random>
 
+// The five cards in play. A cheap value type: it is copied into every
+// search Node, because card rotation is part of the game state.
 class Cards{
 public:
 
-    enum CardType {CardA1 = 0, CardA2, CardB1, CardB2, CardExchange};
+    // Red = top player, Blue = bottom player
+    enum CardType {Card1_Red = 0, Card2_Red, Card1_Blue, Card2_Blue, PlayedCard};
 
-    Cards() {};
+    Cards();
 
-    bool addCard(Animal);
-    bool play(int);
-    void show();
-    Move getMove(CardType, int);
+    void deal(std::mt19937& rng);          // draw 5 distinct cards from the deck
+
+    CurrentCard::CardType card(int slot) const { return mCards.at(slot); }
+
+    void set(int slot, CurrentCard::CardType type) { mCards.at(slot) = type; }
+
+    static int firstSlot(int color);        // Piece::Color -> first hand slot
+
+    void play(int slot);                    // swap played card with side card
+    void show() const;
 
 private:
-    void swap(int, int);
-
-    std::map<int, std::shared_ptr<Animal>> mCards;
+    std::array<CurrentCard::CardType, 5> mCards;
 };
 
 #endif //ONITAMA_CARDS_H

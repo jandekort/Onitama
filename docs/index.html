@@ -1,0 +1,1221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Onitama</title>
+<style>
+  :root {
+    --bg: #1e2228;
+    --panel: #2a2f37;
+    --board-light: #d8b98c;
+    --board-dark: #c4a075;
+    --line: #4a4f58;
+    --blue: #3b82e0;
+    --red: #d8434f;
+    --hi: #f5d76e;
+    --text: #e8e6e1;
+    --muted: #9aa0a8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px;
+    background: var(--bg); color: var(--text);
+    font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  h1 { margin: 0; font-size: 26px; letter-spacing: 6px; font-weight: 600; }
+  h1 small { letter-spacing: 1px; font-size: 12px; color: var(--muted); display: block; text-align: center; }
+
+  #status {
+    min-height: 24px; font-size: 16px; color: var(--hi); text-align: center;
+  }
+
+  #layout { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; justify-content: center; }
+
+  /* --- board --- */
+  #boardwrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  #board {
+    display: grid; grid-template-columns: repeat(5, 64px); grid-template-rows: repeat(5, 64px);
+    border: 6px solid #5a4632; border-radius: 6px;
+  }
+  .cell {
+    width: 64px; height: 64px; display: flex; align-items: center; justify-content: center;
+    font-size: 40px; cursor: default; position: relative; user-select: none;
+  }
+  .cell.light { background: var(--board-light); }
+  .cell.dark  { background: var(--board-dark); }
+  .cell.temple-red::after {
+    content: "紅"; position: absolute; font-size: 30px; opacity: 0.25; pointer-events: none;
+    color: #8a1f28;
+  }
+  .cell.temple-blue::after {
+    content: "藍"; position: absolute; font-size: 30px; opacity: 0.25; pointer-events: none;
+    color: #1f3f8a;
+  }
+  .cell.lastmove { box-shadow: inset 0 0 0 4px rgba(245, 215, 110, 0.55); }
+  .cell.selectable { cursor: pointer; box-shadow: inset 0 0 0 3px rgba(59, 130, 224, 0.65); }
+  .cell.selectable.red-turn { box-shadow: inset 0 0 0 3px rgba(216, 67, 79, 0.65); }
+  .cell.selected   { cursor: pointer; box-shadow: inset 0 0 0 4px var(--blue); }
+  .cell.selected.red-turn { box-shadow: inset 0 0 0 4px var(--red); }
+  .cell.target     { cursor: pointer; }
+  .cell.target::before {
+    content: ""; position: absolute; width: 20px; height: 20px; border-radius: 50%;
+    background: rgba(59, 130, 224, 0.55); pointer-events: none;
+  }
+  .cell.target.red-move::before {
+    background: rgba(216, 67, 79, 0.55);
+  }
+  .cell.target.capture::before {
+    width: 54px; height: 54px; background: none; border: 4px solid rgba(216, 67, 79, 0.8);
+  }
+  .cell.target.red-move.capture::before {
+    border: 4px solid rgba(59, 130, 224, 0.8);
+  }
+  .piece {
+    line-height: 1; pointer-events: none;
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .piece svg {
+    width: 72%; height: 72%; display: block;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
+    /* thin contrasting edge so pieces read against any square color */
+    stroke: rgba(0,0,0,0.45); stroke-width: 0.6px;
+  }
+  .piece.blue { color: var(--blue); }
+  .piece.red  { color: var(--red); }
+
+  /* --- cards --- */
+  .cardrow { display: flex; gap: 12px; justify-content: center; min-height: 118px; }
+  .sidecol { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+  .sidecol .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .card {
+    background: var(--panel); border: 2px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; text-align: center; width: 110px;
+  }
+  .card .name { font-size: 13px; margin-bottom: 6px; letter-spacing: 1px; }
+  .card.mine { cursor: pointer; }
+  .card.mine:hover { border-color: var(--blue); }
+  .card.mine.red-turn:hover { border-color: var(--red); }
+  .card.sel { border-color: var(--hi); box-shadow: 0 0 10px rgba(245,215,110,0.35); }
+  .card.theirs { opacity: 0.85; }
+  .minigrid { display: grid; grid-template-columns: repeat(5, 16px); grid-template-rows: repeat(5, 16px); justify-content: center; }
+  .minigrid div { border: 1px solid #3a3f47; }
+  .minigrid .c { display: flex; align-items: center; justify-content: center; font-size: 12px; }
+  .minigrid .c.rotated { transform: rotate(180deg); }
+  .minigrid .m { background: var(--hi); }          /* destination */
+  .minigrid .m.r { background: var(--red); }
+
+  /* --- evaluation bar --- */
+  #evalcol { display: flex; flex-direction: column; align-items: center; }
+  #evalbar {
+    width: 34px; height: 332px; /* matches the board incl. border */
+    border: 1px solid var(--line); border-radius: 6px;
+    background: var(--red); overflow: hidden; position: relative;
+  }
+  #evalfill {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: var(--blue); height: 50%;
+    transition: height 0.4s ease;
+  }
+  /* The score sits inside the bar: in the blue part (bottom) when Blue
+     leads, in the red part (top) when Red leads. */
+  #evalscore {
+    position: absolute; left: 0; right: 0; text-align: center;
+    font-size: 11px; font-weight: 700; color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.6); pointer-events: none;
+  }
+  #evalscore.pos { bottom: 4px; }
+  #evalscore.neg { top: 4px; }
+
+  /* --- engine lines (analysis) --- */
+  #linesbox {
+    width: 100%; max-width: 540px;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  #linesbox .title {
+    font-size: 11px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  /* Spinner shown in the caption while lines are still being computed. */
+  #linesbox .title .spin {
+    display: inline-block; width: 9px; height: 9px; margin-left: 7px;
+    border: 2px solid var(--muted); border-top-color: transparent;
+    border-radius: 50%; vertical-align: middle;
+    animation: linespin 0.8s linear infinite;
+  }
+  @keyframes linespin { to { transform: rotate(360deg); } }
+  .lineRow { display: flex; gap: 8px; align-items: baseline; font-size: 12px; line-height: 1.4; }
+  .lineRank  { color: var(--muted); }
+  .lineScore { font-weight: 700; min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; }
+  /* Clipped to one line with a trailing ellipsis by default. The line being
+     previewed gets .expanded, which lets it wrap over as many rows as needed
+     (tokens never split, so wraps land between moves). */
+  .lineMoves {
+    color: var(--text); opacity: 0.92;
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .lineMoves.expanded {
+    overflow: visible; text-overflow: clip; white-space: normal;
+  }
+  .lineMoves .mv   { white-space: nowrap; cursor: pointer; border-radius: 3px; padding: 0 1px; }
+  .lineMoves .mv:hover { background: var(--line); }
+  .lineMoves .mv.ro       { cursor: default; }        /* read-only (engine's move) */
+  .lineMoves .mv.ro:hover { background: none; }
+  .lineMoves .mv.blue { color: var(--blue); }
+  .lineMoves .mv.red  { color: var(--red); }
+  .lineMoves .mv.inpath { background: rgba(255,255,255,0.06); }
+  .lineMoves .mv.active { background: var(--hi); color: #000; }
+  .lineMoves .sep  { color: var(--muted); }
+
+  /* --- engine-line preview toolbar --- */
+  #previewbar {
+    width: 100%; max-width: 540px; box-sizing: border-box;
+    display: flex; gap: 8px; align-items: center;
+    font-size: 12px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px;
+  }
+  #previewbar .pvLabel { color: var(--muted); margin-right: auto; }
+  #previewbar button { padding: 3px 9px; font-size: 12px; }
+
+  /* --- controls --- */
+  #controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  select, button {
+    background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 12px; font-size: 14px; cursor: pointer;
+  }
+  button:hover { border-color: var(--hi); }
+  #passbtns button { border-color: var(--hi); }
+  #note { font-size: 12px; color: var(--muted); max-width: 540px; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>ONITAMA</h1>
+
+<div id="controls">
+  <label>Max engine depth
+    <select id="depth">
+      <option value="3">3-ply</option>
+      <option value="5">5-ply</option>
+      <option value="7">7-ply</option>
+      <option value="9" selected>9-ply</option>
+      <option value="11">11-ply</option>
+      <option value="13">13-ply</option>
+      <option value="15">15-ply</option>
+    </select>
+  </label>
+  <label>Timeout
+    <select id="maxtime">
+      <option value="1">1 s</option>
+      <option value="2">2 s</option>
+      <option value="5">5 s</option>
+      <option value="10">10 s</option>
+      <option value="15" selected>15 s</option>
+      <option value="30">30 s</option>
+      <option value="0">Unlimited</option>
+    </select>
+  </label>
+  <label>First move
+    <select id="first">
+      <option value="-1">Random</option>
+      <option value="0" selected>You</option>
+      <option value="1">Engine</option>
+    </select>
+  </label>
+  <button id="newgame">New game</button>
+  <button id="takeback">Take back</button>
+  <label><input type="checkbox" id="showeval"> Show evaluation</label>
+  <label><input type="checkbox" id="showlines"> Show engine lines</label>
+  <label><input type="checkbox" id="engineoff"> Engine off</label>
+</div>
+
+<div id="status">Loading engine&hellip;</div>
+
+<div id="layout">
+  <div class="sidecol">
+    <div class="label">Engine's cards</div>
+    <div class="cardrow" id="redcards"></div>
+    <div class="label" style="margin-top:14px">Played card</div>
+    <div class="cardrow" id="playedcard"></div>
+  </div>
+
+  <div id="evalcol">
+    <div id="evalbar">
+      <div id="evalfill"></div>
+      <div id="evalscore" class="pos">&mdash;</div>
+    </div>
+  </div>
+
+  <div id="boardwrap">
+    <div id="board"></div>
+  </div>
+
+  <div class="sidecol">
+    <div class="label">Your cards (click to select)</div>
+    <div class="cardrow" id="bluecards"></div>
+    <div id="passbtns"></div>
+  </div>
+</div>
+
+<div id="previewbar" style="display:none"></div>
+<div id="linesbox"></div>
+
+<div style="display: flex; gap: 10px; align-items: center; justify-content: center; margin: 16px 0; flex-wrap: wrap;">
+  <input type="text" id="puzzlehash" placeholder="Paste state hash…" style="width: 180px; padding: 6px; border-radius: 4px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font-family: monospace; font-size: 12px;">
+  <button id="loadstate">Load/Reload State</button>
+  <button id="copystate">Copy</button>
+  <button id="pastestate">Paste</button>
+</div>
+
+<div id="note">
+  You play blue, moving up the board. Pick a card, then a piece,
+  then a destination. Win by capturing the enemy Master or by walking your Master onto
+  the enemy temple square. Cards rotate: the card you play is taken by your opponent.
+  Want to practice? Try the <a href="puzzle.html" style="color: var(--hi); text-decoration: none;">puzzle generator</a>
+  to solve win-in-N positions.
+</div>
+
+<script>
+"use strict";
+
+let api = null;          // async proxies to the engine running in the worker
+let state = null;        // last JSON state from the engine
+let sel = { hand: null, from: null };
+let busy = false;        // true while the engine is thinking
+
+// --- engine-line preview/scrub ---
+// We scrub a line by playing its moves forward on the live engine and taking
+// them back to leave it again (og_undo restores the position's cached lines and
+// keeps the game's take-back history intact, which decodeState would not).
+let preview = null;      // { lineIndex, ply, applied } while scrubbing; null = live game
+let linesData = null;    // the last lines payload rendered ({ depth, lines })
+let linesSkip = 0;       // 1 if the lines' first move is already on the board, else 0
+let lineTokenEls = [];   // lineTokenEls[lineIndex][plyIndex] = the move's <span>
+let lineMovesEls = [];   // lineMovesEls[lineIndex] = the line's .lineMoves container
+
+const $ = id => document.getElementById(id);
+
+function cardDiagram(card, rotated) {
+  const grid = document.createElement("div");
+  grid.className = "minigrid";
+  const marks = {};
+  for (const [dx, dy] of card.moves) {
+    const x = rotated ? 2 - dx : 2 + dx;
+    const y = rotated ? 2 - dy : 2 + dy;
+    marks[x + "," + y] = true;
+  }
+  for (let y = 0; y < 5; y++)
+    for (let x = 0; x < 5; x++) {
+      const d = document.createElement("div");
+      if (x === 2 && y === 2) {
+        d.className = "c" + (rotated ? " rotated" : "");
+        d.textContent = rotated ? "○" : "●";
+      } else if (marks[x + "," + y]) {
+        d.className = "m" + (rotated ? " r" : "");
+      }
+      grid.appendChild(d);
+    }
+  return grid;
+}
+
+function cardEl(card, opts) {
+  const el = document.createElement("div");
+  el.className = "card " + (opts.mine ? "mine" : "theirs") + (opts.sel ? " sel" : "");
+  const name = document.createElement("div");
+  name.className = "name";
+  name.textContent = card.name.toUpperCase();
+  el.appendChild(name);
+  el.appendChild(cardDiagram(card, opts.rotated));
+  if (opts.onclick) el.onclick = opts.onclick;
+  return el;
+}
+
+function isEngineOff() {
+  return $("engineoff").checked;
+}
+
+function myTurn() {
+  return state && !state.gameover && state.tomove === "blue" && !busy && !preview;
+}
+
+function redTurn() {
+  return state && !state.gameover && state.tomove === "red" && !busy && !preview && isEngineOff();
+}
+
+function legalFor(hand, from) {
+  return state.legal.filter(l => !l.pass && l.hand === hand
+      && (!from || (l.fromX === from.x && l.fromY === from.y)));
+}
+
+// Inline SVG piece silhouettes (fill = currentColor, so .piece.blue/.red drives
+// the color). Drawn ourselves instead of using ♚/♟ glyphs, which mobile browsers
+// render as fixed-black emoji and ignore the CSS color of.
+function pieceSVG(master) {
+  const body = master
+    // master: crown + cross on top
+    ? '<rect x="21" y="5" width="3" height="9" rx="0.6"/>'
+      + '<rect x="18" y="7.5" width="9" height="3" rx="0.6"/>'
+      + '<path d="M22.5,13 C18.9,13 16,15.9 16,19.5 C16,21.6 17,23.5 18.6,24.7'
+      + ' C15.3,26 11,30.8 11,39 L34,39 C34,30.8 29.7,26 26.4,24.7'
+      + ' C28,23.5 29,21.6 29,19.5 C29,15.9 26.1,13 22.5,13 Z"/>'
+    // student: classic pawn
+    : '<path d="M22.5,9 C20.29,9 18.5,10.79 18.5,13 C18.5,13.89 18.79,14.71 19.28,15.38'
+      + ' C17.33,16.5 16,18.59 16,21 C16,23.03 16.94,24.84 18.41,26.03'
+      + ' C15.41,27.09 11,31.58 11,39.5 L34,39.5 C34,31.58 29.59,27.09 26.59,26.03'
+      + ' C28.06,24.84 29,23.03 29,21 C29,18.59 27.67,16.5 25.72,15.38'
+      + ' C26.21,14.71 26.5,13.89 26.5,13 C26.5,10.79 24.71,9 22.5,9 Z"/>';
+  return '<svg viewBox="0 0 45 45" fill="currentColor">' + body + '</svg>';
+}
+
+function render() {
+  // --- board ---
+  const board = $("board");
+  board.innerHTML = "";
+  const pieceAt = {};
+  for (const p of state.pieces) pieceAt[p.x + "," + p.y] = p;
+
+  const targets = {};
+  if ((myTurn() || redTurn()) && sel.hand !== null && sel.from)
+    for (const l of legalFor(sel.hand, sel.from)) targets[l.toX + "," + l.toY] = l;
+
+  const movable = {};
+  if ((myTurn() || redTurn()) && sel.hand !== null)
+    for (const l of legalFor(sel.hand, null)) movable[l.fromX + "," + l.fromY] = true;
+
+  for (let y = 0; y < 5; y++)
+    for (let x = 0; x < 5; x++) {
+      const cell = document.createElement("div");
+      cell.className = "cell " + ((x + y) % 2 ? "dark" : "light");
+      if (x === 2 && y === 0) cell.classList.add("temple-red");
+      if (x === 2 && y === 4) cell.classList.add("temple-blue");
+      if (state.last && ((state.last.fromX === x && state.last.fromY === y)
+                      || (state.last.toX === x && state.last.toY === y)))
+        cell.classList.add("lastmove");
+
+      const p = pieceAt[x + "," + y];
+      if (p) {
+        const span = document.createElement("span");
+        span.className = "piece " + p.color;
+        span.innerHTML = pieceSVG(p.master);
+        cell.appendChild(span);
+      }
+
+      const key = x + "," + y;
+      if (targets[key]) {
+        cell.classList.add("target");
+        if (myTurn()) cell.classList.add("blue-move");
+        if (redTurn()) cell.classList.add("red-move");
+        if (p) cell.classList.add("capture");
+        const ply = targets[key];
+        cell.onclick = () => playIndex(state.legal.indexOf(ply));
+      } else if (myTurn() && p && p.color === "blue" && movable[key]) {
+        cell.classList.add(sel.from && sel.from.x === x && sel.from.y === y
+                           ? "selected" : "selectable");
+        cell.onclick = () => { sel.from = { x, y }; render(); };
+      } else if (redTurn() && p && p.color === "red" && movable[key]) {
+        const cls = sel.from && sel.from.x === x && sel.from.y === y
+                    ? "selected" : "selectable";
+        cell.classList.add(cls, "red-turn");
+        cell.onclick = () => { sel.from = { x, y }; render(); };
+      }
+      board.appendChild(cell);
+    }
+
+  // --- cards ---
+  const red = $("redcards"); red.innerHTML = "";
+  state.cards.red.forEach((c, i) => {
+    const el = cardEl(c, {
+      mine: redTurn(), sel: sel.hand === i && redTurn(),
+      rotated: true,
+      onclick: () => { if (redTurn()) { sel.hand = i; sel.from = null; render(); } }
+    });
+    if (redTurn()) el.classList.add("red-turn");
+    red.appendChild(el);
+  });
+
+  const played = $("playedcard"); played.innerHTML = "";
+  played.appendChild(cardEl(state.cards.played, { rotated: state.tomove === "red" }));
+
+  const blue = $("bluecards"); blue.innerHTML = "";
+  state.cards.blue.forEach((c, i) => {
+    blue.appendChild(cardEl(c, {
+      mine: true, sel: sel.hand === i,
+      onclick: () => { if (myTurn()) { sel.hand = i; sel.from = null; render(); } }
+    }));
+  });
+
+  // --- pass buttons (only when no piece can move) ---
+  const pass = $("passbtns"); pass.innerHTML = "";
+  if (myTurn() && state.legal.length && state.legal.every(l => l.pass)) {
+    state.legal.forEach((l, i) => {
+      const b = document.createElement("button");
+      b.textContent = "Pass with " + state.cards.blue[l.hand].name;
+      b.onclick = () => playIndex(i);
+      pass.appendChild(b);
+    });
+  }
+
+  // --- status ---
+  let msg;
+  if (state.gameover) {
+    msg = state.winner === "blue" ? "You win! 🎉" : "Opponent wins. ☠️";
+  } else if (busy) {
+    msg = "Engine is thinking…";
+  } else if (state.tomove === "red") {
+    if (isEngineOff()) {
+      if (state.legal.every(l => l.pass)) {
+        msg = "Opponent must pass a card.";
+      } else if (sel.hand === null) {
+        msg = "Opponent's turn — pick a card.";
+      } else if (!sel.from) {
+        msg = "Now pick a piece (outlined).";
+      } else {
+        msg = "Pick a destination.";
+      }
+    } else {
+      msg = "Engine to move…";
+    }
+  } else if (state.legal.every(l => l.pass)) {
+    msg = "No piece can move — you must pass a card.";
+  } else if (sel.hand === null) {
+    msg = "Your turn — pick a card.";
+  } else if (!sel.from) {
+    msg = "Now pick a piece (outlined).";
+  } else {
+    msg = "Pick a destination.";
+  }
+  $("status").textContent = preview
+    ? "Previewing an engine line. Use ◀ ▶ or Back to game."
+    : msg;
+}
+
+const WIN = 100000;     // must match BestMove::WIN in the engine
+
+const INSTANT_SEARCH_DEPTH = 5;   // shallow depth for responsive score bar updates
+
+// The engine always runs the full Alpha-Beta + TT + iterative-deepening search
+// (SearchConfig::fromAlgorithm code 3). The algorithm is no longer user-
+// selectable, but the value is still threaded through the WASM API so a
+// different config could be wired in later without touching the protocol.
+const ENGINE_ALGO = 3;
+const currentAlgo = () => ENGINE_ALGO;
+
+// Max think time, in milliseconds (0 = no limit). The depth dropdown is the
+// ceiling; iterative deepening stops at whichever of depth/time comes first.
+const currentTimeMs = () => {
+  const secs = parseInt($("maxtime").value, 10);
+  return secs > 0 ? secs * 1000 : 0;
+};
+
+async function updateEvalBar() {
+  if (!$("showeval").checked) return; // hidden: skip the search too
+
+  let blueScore, matePlies = null;
+  if (state.gameover) {
+    blueScore = state.winner === "blue" ? Infinity : -Infinity;
+  } else {
+    // Ask the engine for its best-line score. Right after the engine moves
+    // (and after a take-back) this is already cached, so it costs nothing and
+    // keeps the full search depth. Only a genuinely unanalyzed position (game
+    // start) misses the cache and searches — capped at INSTANT_SEARCH_DEPTH so
+    // it stays instant instead of freezing the page.
+    const selectedDepth = parseInt($("depth").value, 10);
+    const requestDepth = Math.min(selectedDepth, INSTANT_SEARCH_DEPTH);
+    const score = await api.evalScore(requestDepth, 1, currentAlgo(), currentTimeMs()); // useCached = 1
+
+    if (Math.abs(score) >= WIN) {
+      // Get the actual depth the score was computed at from engineLines data.
+      // The cached score may have been computed at a deeper depth than requestDepth,
+      // so we must use the actual depth to calculate mate plies correctly.
+      try {
+        const lineData = JSON.parse(await api.engineLines());
+        const actualSearchDepth = lineData.depth || requestDepth;
+        matePlies = actualSearchDepth - (Math.abs(score) - WIN);
+      } catch {
+        // Fallback if engineLines is unavailable; use requestDepth as estimate
+        matePlies = requestDepth - (Math.abs(score) - WIN);
+      }
+    }
+    blueScore = state.tomove === "blue" ? score : -score;
+  }
+
+  paintEvalBar(blueScore, matePlies);
+}
+
+// Paint the bar from a Blue-perspective score (+ optional mate distance in plies).
+// The bar position encodes the sign (blue leads = bottom, red = top), so the
+// number itself is always shown as a positive magnitude.
+function paintEvalBar(blueScore, matePlies) {
+  const label = $("evalscore"), fill = $("evalfill");
+  const blueAhead = blueScore >= 0;
+  label.className = blueAhead ? "pos" : "neg";
+
+  if (!isFinite(blueScore)) {
+    label.textContent = "∞";
+    fill.style.height = blueAhead ? "100%" : "0%";
+  } else if (matePlies !== null) {
+    // Two plies = one move: a mate the winner delivers on its next move
+    // (1 or 2 plies away) reads as M1.
+    label.textContent = "M" + Math.ceil(matePlies / 2);
+    fill.style.height = blueAhead ? "100%" : "0%";
+  } else {
+    label.textContent = Math.abs(blueScore).toFixed(1);
+    // Squash the score into a 0..1 bar fraction (0.5 = equal), scaled so
+    // everyday edges stay visually modest.
+    fill.style.height = (100 / (1 + Math.exp(-blueScore / 30))) + "%";
+  }
+}
+
+// Update the bar from an analysis line (side-to-move perspective) so it stays
+// consistent with the principal variations shown below it.
+function setEvalBarFromLine(line, depthReached) {
+  if (!$("showeval").checked || !state || state.gameover) return;
+  let matePlies = null;
+  if (Math.abs(line.score) >= WIN)
+    matePlies = depthReached - (Math.abs(line.score) - WIN);
+  const blueScore = state.tomove === "blue" ? line.score : -line.score;
+  paintEvalBar(blueScore, matePlies);
+}
+
+// Square in board coordinates -> readable name: file a–e (x), rank 1–5 with
+// rank 1 at Blue's home edge, so your back row is "1".
+function sq(x, y) { return "abcde"[x] + (5 - y); }
+
+function formatLineScore(score, depth) {
+  if (Math.abs(score) >= WIN) {
+    const matePlies = depth - (Math.abs(score) - WIN);
+    return (score > 0 ? "M" : "−M") + Math.max(1, Math.ceil(matePlies / 2));
+  }
+  return (score >= 0 ? "+" : "−") + Math.abs(score).toFixed(1);
+}
+
+// The principal-variations panel. The lines are computed by a SEPARATE analysis
+// worker (see the analysis-worker block lower down), shown one at a time as each
+// is found, and stopped instantly on any change. This function just (re)starts
+// that process for the current position.
+async function updateLines(lineDepthCap) {
+  stopAnalysis();                 // cancel any in-flight analysis immediately
+  const box = $("linesbox");
+  if (!$("showlines").checked || !state || state.gameover || preview) {
+    if (!preview) box.style.display = "none";
+    return;
+  }
+  box.style.display = "";
+
+  // On the engine's own turn it is about to move; don't analyse that position.
+  if (state.tomove === "red" && !isEngineOff()) {
+    linesData = null;
+    box.innerHTML = "";
+    box.appendChild(linesTitle(parseInt($("depth").value, 10), true)); // spinner
+    return;
+  }
+
+  runAnalysisGeneration(lineDepthCap);   // progressive, non-blocking
+}
+
+// Build the panel caption "Engine lines (max depth N)", with a spinning glyph
+// appended while the search is still running.
+function linesTitle(depth, spinning) {
+  const title = document.createElement("div");
+  title.className = "title";
+  title.textContent = "Engine lines" + (depth ? " (max depth " + depth + ")" : "");
+  if (spinning) {
+    const sp = document.createElement("span");
+    sp.className = "spin";
+    title.appendChild(sp);
+  }
+  return title;
+}
+
+// Append one line row to the box: a label, the score (Blue's perspective), and
+// the move tokens. lineIndex >= 0 makes the moves clickable (preview/scrub) and
+// records them for highlighting; lineIndex < 0 renders a read-only row (used for
+// the engine's already-played line).
+function appendLineRow(box, label, line, scoreForBlue, depthForMate, lineIndex) {
+  const readOnly = lineIndex < 0;
+  const row = document.createElement("div");
+  row.className = "lineRow";
+
+  const rank = document.createElement("span");
+  rank.className = "lineRank";
+  rank.textContent = label;
+
+  const score = document.createElement("span");
+  score.className = "lineScore";
+  score.textContent = formatLineScore(scoreForBlue, depthForMate);
+
+  const moves = document.createElement("span");
+  moves.className = "lineMoves";
+  if (!readOnly) { lineMovesEls[lineIndex] = moves; lineTokenEls[lineIndex] = []; }
+  line.moves.forEach((m, j) => {
+    if (j) {
+      moves.appendChild(document.createTextNode(" "));
+      const s = document.createElement("span");
+      s.className = "sep"; s.textContent = "·";
+      moves.appendChild(s);
+      moves.appendChild(document.createTextNode(" "));
+    }
+    const mv = document.createElement("span");
+    mv.className = "mv " + m.color + (readOnly ? " ro" : "");
+    mv.textContent = moveText(m);
+    if (!readOnly) {
+      mv.title = "Preview to this move";
+      mv.onclick = () => enterPreview(lineIndex, j);
+      lineTokenEls[lineIndex][j] = mv;
+    }
+    moves.appendChild(mv);
+  });
+
+  row.append(rank, score, moves);
+  box.appendChild(row);
+}
+
+// Render the variations collected so far, plus a status note under the lines.
+// `status` is "" when done, "analysing…" while running, "time limit" if the
+// budget stopped it before 3 lines. Guards on the generation so stale results
+// (the position changed) are ignored.
+function renderAnalysisLines(epoch, status) {
+  if (epoch !== analysisEpoch || !state) return;
+  const box = $("linesbox");
+  box.innerHTML = "";
+
+  // Spinner in the caption while still computing; no separate "analysing" row.
+  box.appendChild(linesTitle(linesData && linesData.depth, status === "analysing…"));
+
+  lineTokenEls = [];
+  lineMovesEls = [];
+
+  const lines = (linesData && linesData.lines) || [];
+  lines.forEach((ln, i) => {
+    const scoreForBlue = state.tomove === "blue" ? ln.score : -ln.score;
+    appendLineRow(box, (i + 1) + ".", ln, scoreForBlue,
+                  ln.depthReached || (linesData && linesData.depth), i);
+  });
+
+  highlightPreviewTokens();   // keep the active move lit if we are mid-preview
+
+  // Status note beneath the lines (the "analysing" state uses the caption
+  // spinner instead, so only terminal states get a text note here).
+  let noteText = "";
+  if (status === "time limit")
+    noteText = "Increase timeout to show more lines";
+  else if (status === "unavailable")
+    noteText = "(analysis unavailable)";
+  if (noteText) {
+    const note = document.createElement("div");
+    note.className = "lineRow"; note.style.color = "var(--muted)";
+    note.textContent = noteText;
+    box.appendChild(note);
+  }
+}
+
+// Notation for one engine-line move, e.g. "b2→c3 Tiger" or "pass Crab".
+function moveText(m) {
+  return m.pass
+    ? "pass " + m.card
+    : sq(m.fromX, m.fromY) + "→" + sq(m.toX, m.toY) + " " + m.card;
+}
+
+// Find the index in `st.legal` matching an engine-line move. Line moves carry a
+// card name; legal moves carry a hand slot, so we resolve the name via the hand.
+function matchLegalIndex(st, m) {
+  const hand = st.tomove === "red" ? st.cards.red : st.cards.blue;
+  return st.legal.findIndex(l => {
+    if (!!l.pass !== !!m.pass) return false;
+    const card = hand[l.hand] && hand[l.hand].name;
+    if (m.pass) return card === m.card;
+    return l.fromX === m.fromX && l.fromY === m.fromY
+        && l.toX === m.toX && l.toY === m.toY && card === m.card;
+  });
+}
+
+// Enter (or move within) preview of an engine line, showing the position after
+// the clicked ply. Moves are played forward on the live engine; the count is
+// tracked so exit (and re-navigation) can take them back exactly.
+async function enterPreview(lineIndex, ply) {
+  if (busy || !linesData) return;
+  stopAnalysis();   // freeze the line list while we scrub it
+  // Unwind any currently-applied preview moves so we're back at the live game.
+  if (preview) for (let k = 0; k < preview.applied; k++) await api.undo();
+  else preview = {};
+  // Play forward along the chosen line. linesSkip skips a first move that's
+  // already on the board, so ply 0 there means "the position as it stands".
+  const moves = linesData.lines[lineIndex].moves;
+  let st = JSON.parse(await api.state());
+  let applied = 0;
+  for (let k = linesSkip; k <= ply; k++) {
+    const idx = matchLegalIndex(st, moves[k]);
+    if (idx < 0) break;   // line ran into game over; stop where we are
+    await api.play(idx);
+    st = JSON.parse(await api.state());
+    applied++;
+  }
+  preview.lineIndex = lineIndex;
+  preview.ply = ply;
+  preview.applied = applied;
+  state = st;
+  sel = { hand: null, from: null };
+  render();
+  highlightPreviewTokens();
+  renderPreviewBar();
+}
+
+// Step forward/back within the current line; stepping before move 1 exits.
+function previewStep(delta) {
+  if (!preview) return;
+  const last = linesData.lines[preview.lineIndex].moves.length - 1;
+  const p = preview.ply + delta;
+  if (p < 0) { exitPreview(); return; }
+  if (p > last) return;
+  enterPreview(preview.lineIndex, p);
+}
+
+// Move to the line above/below, keeping the current ply (clamped to its length).
+function previewLine(delta) {
+  if (!preview) return;
+  const li = preview.lineIndex + delta;
+  if (li < 0 || li > linesData.lines.length - 1) return;
+  const ply = Math.min(preview.ply, linesData.lines[li].moves.length - 1);
+  enterPreview(li, ply);
+}
+
+// Take back any applied preview moves so the engine is at the live game again
+// (no rendering — callers refresh as needed).
+async function restoreRealIfPreview() {
+  if (!preview) return;
+  for (let k = 0; k < preview.applied; k++) await api.undo();
+  preview = null;
+  state = JSON.parse(await api.state());
+  $("previewbar").style.display = "none";
+}
+
+async function exitPreview() {
+  await restoreRealIfPreview();
+  sel = { hand: null, from: null };
+  render();
+  highlightPreviewTokens();
+}
+
+// Adopt the previewed position as the live game: keep the moves we played
+// (instead of taking them back) and resume normal play. maybeAiTurn then makes
+// the engine move only if it's its turn and the engine is on.
+async function commitPreview() {
+  if (!preview) return;
+  preview = null;
+  $("previewbar").style.display = "none";
+  sel = { hand: null, from: null };
+  // Turn the engine off so going to the position never triggers a search; the
+  // user can play on from here (and re-enable the engine when they want it).
+  $("engineoff").checked = true;
+  await refresh();
+  await updateStateHash();
+  maybeAiTurn();
+}
+
+function highlightPreviewTokens() {
+  for (let li = 0; li < lineTokenEls.length; li++) {
+    const onLine = preview && preview.lineIndex === li;
+    // Only the previewed line expands to its full, wrapped form; others stay clipped.
+    if (lineMovesEls[li]) lineMovesEls[li].classList.toggle("expanded", !!onLine);
+    (lineTokenEls[li] || []).forEach((el, pj) => {
+      el.classList.toggle("inpath", !!(onLine && pj < preview.ply));
+      el.classList.toggle("active", !!(onLine && pj === preview.ply));
+    });
+  }
+}
+
+function renderPreviewBar() {
+  const bar = $("previewbar");
+  bar.innerHTML = "";
+  if (!preview) { bar.style.display = "none"; return; }
+  bar.style.display = "";
+  const moves = linesData.lines[preview.lineIndex].moves;
+  const label = document.createElement("span");
+  label.className = "pvLabel";
+  label.textContent = "Previewing line " + (preview.lineIndex + 1)
+      + " — move " + (preview.ply + 1) + " of " + moves.length;
+  const mk = (txt, fn, disabled) => {
+    const b = document.createElement("button");
+    b.textContent = txt; b.disabled = !!disabled; b.onclick = fn;
+    return b;
+  };
+  const go = mk("Go to position", commitPreview, false);
+  go.title = "Make this the live game position and keep playing";
+  bar.append(
+    label,
+    mk("◀", () => previewStep(-1), false),
+    mk("▶", () => previewStep(1), preview.ply >= moves.length - 1),
+    go,
+    mk("✕ Back to game", exitPreview, false)
+  );
+}
+
+async function refresh(lineDepthCap) {
+  state = JSON.parse(await api.state());
+  render();
+  // Evaluate once it is the human's turn (or the game ended); skip the
+  // red-to-move state unless engine is off (then evaluate immediately).
+  if (state.gameover || state.tomove === "blue" || isEngineOff())
+    updateEvalBar(); // runs in the worker; no need to await
+  updateLines(lineDepthCap);       // hides itself unless it's the human's turn
+}
+
+async function playIndex(i) {
+  stopAnalysis();   // user is acting; abandon any line computation at once
+  if (i < 0 || !(await api.play(i))) return;
+  state = JSON.parse(await api.state());
+  sel = { hand: null, from: null };
+  await refresh();
+  maybeAiTurn();
+  updateStateHash();
+}
+
+async function maybeAiTurn() {
+  if (state.gameover || state.tomove !== "red") return;
+
+  // If engine is off, don't move automatically—just evaluate the position
+  if (isEngineOff()) {
+    sel = { hand: null, from: null };
+    render(); // Reset selection, ask for opponent move
+    return;
+  }
+
+  stopAnalysis();   // engine is about to think; stop analysing the old position
+  busy = true;
+  render(); // show "Engine is thinking…" while the worker searches off-thread
+  await api.aiMove(parseInt($("depth").value, 10), currentAlgo(), currentTimeMs());
+  state = JSON.parse(await api.state());
+  sel = { hand: null, from: null };
+  await updateStateHash();
+  // Do what refresh() does, but don't call render() until busy is false
+  if (state.gameover || state.tomove === "blue")
+    updateEvalBar();
+  updateLines();
+  busy = false;
+  render(); // update status now that busy is false
+}
+
+async function newGame() {
+  stopAnalysis();
+  await restoreRealIfPreview();
+  sel = { hand: null, from: null };
+  await api.newGame((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0,
+              parseInt($("first").value, 10));
+  state = JSON.parse(await api.state());
+  await refresh(INSTANT_SEARCH_DEPTH);  // opening: cap the line analysis depth
+  await updateStateHash();
+  maybeAiTurn();
+}
+
+$("newgame").onclick = () => { if (!busy) newGame(); };
+
+$("showeval").onchange = () => {
+  $("evalcol").style.display = $("showeval").checked ? "" : "none";
+  if ($("showeval").checked && state && !busy
+      && (state.gameover || state.tomove === "blue"))
+    updateEvalBar();
+};
+
+$("showlines").onchange = () => {
+  if (!$("showlines").checked && preview) { exitPreview(); return; }
+  updateLines();
+};
+
+$("engineoff").onchange = () => {
+  // When unchecking engine off, if it's red's turn, have the engine move;
+  // otherwise just refresh the analysis panel for the current position.
+  if (!$("engineoff").checked && state && state.tomove === "red" && !busy) {
+    maybeAiTurn();
+  } else {
+    updateLines();
+  }
+};
+
+// Changing the search ceiling or the time budget restarts the line analysis.
+$("depth").onchange = () => updateLines();
+$("maxtime").onchange = () => updateLines();
+
+
+// While previewing a line, the keyboard drives it: ← / → step within the line,
+// ↑ / ↓ move to the line above/below, Enter goes to the position, Esc returns
+// to the game. Ignored when typing in a field so the state box etc. keep their
+// normal behaviour.
+document.addEventListener("keydown", (e) => {
+  if (!preview) return;
+  const tag = (document.activeElement && document.activeElement.tagName) || "";
+  if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+  if (e.key === "ArrowRight")     { e.preventDefault(); previewStep(1); }
+  else if (e.key === "ArrowLeft") { e.preventDefault(); previewStep(-1); }
+  else if (e.key === "ArrowUp")   { e.preventDefault(); previewLine(-1); }
+  else if (e.key === "ArrowDown") { e.preventDefault(); previewLine(1); }
+  else if (e.key === "Enter")     { e.preventDefault(); commitPreview(); }
+  else if (e.key === "Escape")    { e.preventDefault(); exitPreview(); }
+});
+
+// Initialize: hide eval column / lines panel if their checkboxes are unchecked
+$("evalcol").style.display = $("showeval").checked ? "" : "none";
+$("linesbox").style.display = $("showlines").checked ? "" : "none";
+
+$("takeback").onclick = async () => {
+  if (busy) return;
+  stopAnalysis();
+  await restoreRealIfPreview();
+  if (!(await api.undo())) return;
+  state = JSON.parse(await api.state());
+  // If that leaves the engine to move, take its ply back too,
+  // so the human gets to redo his own move.
+  if (state.tomove !== "blue") await api.undo();
+  state = JSON.parse(await api.state());
+  sel = { hand: null, from: null };
+  await refresh();
+  await updateStateHash();
+  maybeAiTurn(); // in case we undid past the engine's first move
+};
+
+async function updateStateHash() {
+  try {
+    const encoded = await api.encodeState();
+    $("puzzlehash").value = encoded;
+  } catch (e) {
+    console.error("Failed to update state hash:", e);
+  }
+}
+
+$("pastestate").onclick = async () => {
+  try {
+    const text = await navigator.clipboard.readText();
+    $("puzzlehash").value = text.trim();
+  } catch (e) {
+    console.error("Paste state failed:", e);
+    alert("Error pasting state: " + e.message);
+  }
+};
+
+$("copystate").onclick = async () => {
+  try {
+    $("puzzlehash").select();
+    document.execCommand("copy");
+    $("copystate").textContent = "Copied!";
+    setTimeout(() => { $("copystate").textContent = "Copy State"; }, 2000);
+  } catch (e) {
+    console.error("Copy state failed:", e);
+    alert("Error copying state: " + e.message);
+  }
+};
+
+$("loadstate").onclick = async () => {
+  const hash = $("puzzlehash").value.trim();
+  if (!hash) {
+    alert("Please paste a state hash");
+    return;
+  }
+  if (busy) return;
+  stopAnalysis();
+  await restoreRealIfPreview();
+  try {
+    busy = true;
+    console.log("Decoding state hash:", hash, "length:", hash.length);
+    const result = await api.decodeState(hash);
+    console.log("Decode result:", result, "type:", typeof result);
+    if (!result) {
+      console.error("Decode returned false/0");
+      alert("Invalid state hash - decoding failed");
+      busy = false;
+      return;
+    }
+    state = JSON.parse(await api.state());
+    console.log("Loaded state:", state);
+    console.log("Board pieces:", state.pieces.map(p => `${p.color} ${p.master ? "king" : "pawn"} at ${p.x},${p.y}`));
+    sel = { hand: null, from: null };
+    console.log("Calling refresh...");
+    await refresh();  // full selected depth when explicitly loading a position
+    console.log("After refresh, rendered pieces:", $("board").children.length);
+    await updateStateHash();
+    console.log("After updateStateHash");
+    busy = false;
+    render(); // update status now that busy is false
+    // Load the position faithfully and respect whose turn it is. Do NOT call
+    // maybeAiTurn here: auto-playing the engine would immediately consume red's
+    // move, turning a red-to-move position into a blue-to-move one (and changing
+    // the hash you just loaded).
+  } catch (e) {
+    console.error("Load state failed:", e);
+    alert("Error loading state: " + e.message);
+    busy = false;
+  }
+};
+
+// The engine (WASM) runs in a Web Worker so its searches never block the UI
+// thread. Each api.* call posts a message and resolves when the worker
+// replies, so the page stays responsive (and clickable) while it thinks.
+// Per-page-load cache-buster: rebuilt worker.js/onitama.js are picked up on the
+// next page load, but stay cached within a session (so worker respawns are cheap).
+const CACHE_V = Date.now();
+const workerScript = new URL("worker.js?v=" + CACHE_V, location.href).href;
+const worker = new Worker(workerScript);
+let nextId = 1;
+const pending = new Map();
+let markReady;
+const ready = new Promise(res => { markReady = res; });
+
+worker.onerror = (error) => {
+  const errorMsg = error && error.message ? error.message : String(error);
+  console.error("Worker error:", errorMsg, error.filename, error.lineno);
+  $("status").textContent = "Error loading engine: " + errorMsg;
+};
+
+worker.onmessage = (e) => {
+  const msg = e.data;
+  if (msg.type === "ready") { markReady(); return; }
+  if (msg.type === "error") {
+    console.error("Worker initialization error:", msg.message);
+    $("status").textContent = "Error: " + msg.message;
+    return;
+  }
+  const resolve = pending.get(msg.id);
+  if (resolve) { pending.delete(msg.id); resolve(msg.result); }
+};
+
+function callEngine(method, args) {
+  return ready.then(() => new Promise(resolve => {
+    const id = nextId++;
+    pending.set(id, resolve);
+    worker.postMessage({ id, method, args });
+  }));
+}
+
+api = {
+  newGame:   (seed, first) => callEngine("newGame", [seed, first]),
+  state:     ()            => callEngine("state", []),
+  play:      (i)           => callEngine("play", [i]),
+  aiMove:    (d, a, t)     => callEngine("aiMove", [d, a, t]),
+  undo:      ()            => callEngine("undo", []),
+  evalScore:   (d, c, a, t) => callEngine("evalScore", [d, c, a, t]),
+  engineLines: ()          => callEngine("engineLines", []),
+  searchInfo:  ()          => callEngine("searchInfo", []),
+  encodeState: ()          => callEngine("encodeState", []),
+  decodeState: (hash)      => callEngine("decodeState", [hash]),
+};
+
+// --- Analysis worker: a SECOND engine instance dedicated to the principal-
+// variation panel. Keeping it off the gameplay worker means computing the lines
+// never delays the player's moves, and we can hard-stop it (terminate) the
+// instant the position changes — so there is never a freeze. ---
+let analysisWorker, analysisReady, analysisMarkReady, analysisPending, analysisNextId;
+
+function spawnAnalysisWorker() {
+  analysisWorker = new Worker(workerScript);     // same wasm as gameplay
+  analysisNextId = 1;
+  analysisPending = new Map();
+  analysisReady = new Promise(res => { analysisMarkReady = res; });
+  analysisWorker.onerror = (err) =>
+    console.error("Analysis worker error:", err && err.message);
+  analysisWorker.onmessage = (e) => {
+    const msg = e.data;
+    if (msg.type === "ready") { analysisMarkReady(); return; }
+    if (msg.type === "error") { console.error("Analysis worker:", msg.message); return; }
+    const p = analysisPending.get(msg.id);
+    if (p) {
+      analysisPending.delete(msg.id);
+      if (msg.error) p.reject(new Error(msg.error));   // surface, don't hang
+      else p.resolve(msg.result);
+    }
+  };
+}
+spawnAnalysisWorker();
+
+function callAnalysis(method, args) {
+  return analysisReady.then(() => new Promise((resolve, reject) => {
+    const id = analysisNextId++;
+    analysisPending.set(id, { resolve, reject });
+    analysisWorker.postMessage({ id, method, args });
+  }));
+}
+const ax = {
+  decodeState: (hash)        => callAnalysis("decodeState", [hash]),
+  bestLine:    (d, a, t, ex) => callAnalysis("bestLine", [d, a, t, ex]),
+};
+
+let analysisEpoch = 0;     // generation counter; bumped to invalidate results
+let analysisBusy = false;  // a search is currently in flight on the worker
+
+// Invalidate the current analysis. If a search is actually running, terminate
+// the worker (instant, frees the CPU) and respawn a fresh one; pending calls are
+// rejected so the awaiting loop unwinds. If idle, just bump the generation.
+function stopAnalysis() {
+  analysisEpoch++;
+  if (analysisBusy) {
+    for (const [, p] of analysisPending) p.reject(new Error("analysis cancelled"));
+    analysisPending.clear();
+    analysisWorker.terminate();
+    spawnAnalysisWorker();
+    analysisBusy = false;
+  }
+}
+
+// Compute the top 3 variations for the current position, one at a time, each
+// excluding the moves already found, until 3 are shown / no moves remain / the
+// shared time budget is spent. Renders each line the moment it arrives.
+async function runAnalysisGeneration(lineDepthCap) {
+  const myEpoch = analysisEpoch;   // freshly bumped by stopAnalysis() in updateLines
+  analysisBusy = true;
+  try {
+    const selectedDepth = parseInt($("depth").value, 10);
+    // Optional ceiling (e.g. the opening, capped at INSTANT_SEARCH_DEPTH so a
+    // new game's analysis is instant rather than a deep search).
+    const depth = lineDepthCap ? Math.min(selectedDepth, lineDepthCap) : selectedDepth;
+    const budgetMs = currentTimeMs();                  // 0 = unlimited
+    const deadline = budgetMs > 0 ? performance.now() + budgetMs : 0;
+
+    const hash = await api.encodeState();              // current position
+    if (myEpoch !== analysisEpoch) return;
+
+    await ax.decodeState(hash);
+    if (myEpoch !== analysisEpoch) return;
+
+    linesData = { depth, lines: [] };
+    linesSkip = 0;                                      // first move is a legal move now
+    renderAnalysisLines(myEpoch, "analysing…");
+
+    const exclude = [];                                 // legal-move indices found so far
+    let timedOut = false;
+    for (let k = 0; k < 3; k++) {
+      let timeArg = 0;
+      if (budgetMs > 0) {
+        const remaining = Math.ceil(deadline - performance.now());
+        if (remaining <= 0) { timedOut = true; break; }
+        timeArg = remaining;                            // each line shares the budget
+      }
+      const res = JSON.parse(
+        await ax.bestLine(depth, currentAlgo(), timeArg, exclude.join(",")));
+      if (myEpoch !== analysisEpoch) return;            // cancelled mid-search
+      if (!res || !res.line || res.index < 0) break;    // no allowed move left
+      const line = res.line;
+      line.depthReached = res.depthReached;
+      linesData.lines.push(line);
+      exclude.push(res.index);
+      if (k === 0) setEvalBarFromLine(line, res.depthReached); // keep the bar consistent
+      renderAnalysisLines(myEpoch, "analysing…");
+      if (res.timedOut) { timedOut = true; break; }     // budget spent within this search
+    }
+    renderAnalysisLines(myEpoch,
+      timedOut && linesData.lines.length < 3 ? "time limit" : "");
+  } catch (e) {
+    // A rejected call is either intentional cancellation (epoch advanced, do
+    // nothing) or a genuine worker error (surface it instead of hanging).
+    if (myEpoch === analysisEpoch) {
+      console.error("Analysis failed:", e && e.message);
+      renderAnalysisLines(myEpoch, "unavailable");
+    }
+  } finally {
+    if (myEpoch === analysisEpoch) analysisBusy = false;
+  }
+}
+
+newGame();
+</script>
+</body>
+</html>
